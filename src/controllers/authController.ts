@@ -1,15 +1,14 @@
 import { Request, Response, NextFunction } from "express";
-import User from "../models/User";
-import { IUser } from "../models/User";
+import User, { IUser } from "../models/User";
 
 declare global {
   namespace Express {
     interface Request {
       user?: IUser;
+      file?: Express.Multer.File;
     }
   }
 }
-
 
 // Register a new user
 export const register = async (
@@ -94,7 +93,9 @@ export const login = async (
 // Get current user
 export const getCurrentUser = async (req: Request, res: Response) => {
   try {
-    res.json(req.user);
+    // Cast req to include user property
+    const userReq = req as Request & { user?: IUser };
+    res.json(userReq.user);
   } catch (err) {
     console.error("Get current user error:", err);
     res.status(500).json({ message: "Server error" });

@@ -4,8 +4,7 @@
   "description": "Documentation-Aware RAG Web App backend using TypeScript, MERN stack, and R2R for RAG implementation.",
   "main": "src/server.ts",
   "scripts": {
-    "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts",
+    "start": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
     "test": "jest"
   },
@@ -26,6 +25,7 @@
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.14.1",
     "jest": "^29.7.0",
     "nodemon": "^3.1.9",

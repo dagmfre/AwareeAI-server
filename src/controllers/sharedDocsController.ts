@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import SharedDoc from "../models/SharedDoc";
 import User from "../models/User";
-import r2r from "../config/r2r";
 
 // Share a document
 export const shareDocument = async (
@@ -115,8 +114,7 @@ export const addToLibrary = async (
     // Check if it's public or shared with this user
     const userHasAccess =
       sharedDoc.isPublic ||
-      sharedDoc.sharedWith.includes(req?.user?._id) ||
-      sharedDoc.originalOwner.equals(req?.user?._id);
+      sharedDoc.originalOwner.equals(String(req?.user?._id));
 
     if (!userHasAccess) {
       res
@@ -127,17 +125,8 @@ export const addToLibrary = async (
 
     // Add to user's shared documents
     await User.findByIdAndUpdate(req?.user?._id, {
-      $addToSet: { sharedWithMe: sharedDocId },
+      $addToSet: { sharedWithMe: sharedDoc._id },
     });
-
-    // Also add user to shared with array if not already there
-    if (
-      !sharedDoc.sharedWith.includes(req?.user?._id) &&
-      !sharedDoc.originalOwner.equals(req?.user?._id)
-    ) {
-      sharedDoc.sharedWith.push(req?.user?._id);
-      await sharedDoc.save();
-    }
 
     res.json({ message: "Document added to your library" });
   } catch (err) {

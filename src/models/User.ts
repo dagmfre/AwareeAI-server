@@ -10,7 +10,7 @@ export interface IUser extends Document {
   avatarUrl?: string;
   dateJoined: Date;
   r2rDocumentIds: string[];
-  sharedWithMe: string[];
+  sharedWithMe: mongoose.Types.ObjectId[];
   comparePassword(password: string): Promise<boolean>;
   generateToken(): string;
 }

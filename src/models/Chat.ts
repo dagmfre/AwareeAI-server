@@ -79,7 +79,7 @@ const ChatSchema = new Schema({
       },
       stream: {
         type: Boolean,
-        default: true,
+        default: false,
       },
     },
     default: {},

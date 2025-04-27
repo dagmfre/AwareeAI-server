@@ -3,7 +3,6 @@ import auth from "../middleware/auth";
 import upload from "../middleware/upload";
 import {
   uploadDocument,
-  getUserDocuments,
   deleteDocument,
   uploadDocumentFromUrl,
 } from "../controllers/documentController";
@@ -11,13 +10,10 @@ import {
 const router = express.Router();
 
 // Upload document file
-router.post("/upload", auth, upload.single("document"), uploadDocument);
+router.post("/upload", auth, upload.single("file"), uploadDocument);
 
 // Upload document file from URL
 router.post("/upload-url", auth, uploadDocumentFromUrl);
-
-// Get user documents
-router.get("/", auth, getUserDocuments);
 
 // Delete document
 router.delete("/:documentId", auth, deleteDocument);

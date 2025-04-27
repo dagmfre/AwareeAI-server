@@ -4,7 +4,6 @@ import { Request, Response, NextFunction } from "express";
 import r2r from "../config/r2r";
 import User from "../models/User";
 import SharedDoc from "../models/SharedDoc";
-import { url } from "inspector";
 
 // Upload document to SciPhi Cloud
 export const uploadDocument = async (
@@ -23,6 +22,9 @@ export const uploadDocument = async (
     // Upload to R2R
     const uploadResponse = await r2r.documents.create({
       file: filePath,
+      metadata: {
+        title: req.file.originalname,
+      },
     });
 
     if (!uploadResponse || !uploadResponse.results.documentId) {
@@ -62,12 +64,11 @@ export const uploadDocumentFromUrl = async (
       res.status(400).json({ message: "URL is required" });
       return;
     }
-
-    // Use R2R's web_scrape function through the agent interface
-    const scrapeResult = await r2r.retrieval.agent({
+    // Now ask r2r to format the content properly
+    const formatResult = await r2r.retrieval.agent({
       message: {
         role: "user",
-        content: `Please get the content from this URL: ${url}`,
+        content: `Please get the content from this URL and format it. Do not summarize, paraphrase, or omit any information. Keep 100% of the original text content intact. Only improve the formatting by organizing into proper headings, paragraphs, lists, code blocks, etc. Preserve all original titles, paragraphs, bullet points, code snippets, and other structural elements exactly as they appear. Here's the URL: \n\n${url}`,
       },
       mode: "rag",
       ragTools: ["web_scrape"],
@@ -78,9 +79,9 @@ export const uploadDocumentFromUrl = async (
       },
     });
 
-    // Extract the content from the response
-    const content =
-      scrapeResult.results.messages[scrapeResult.results.messages.length - 1]
+    // Get the formatted content
+    const formattedContent =
+      formatResult.results.messages[formatResult.results.messages.length - 1]
         .content;
 
     // Create a temporary file
@@ -89,7 +90,7 @@ export const uploadDocumentFromUrl = async (
       "../uploads/",
       `${Date.now()}-scraped-doc.txt`
     );
-    fs.writeFileSync(tempFilePath, content);
+    fs.writeFileSync(tempFilePath, formattedContent);
 
     // Upload to R2R
     const uploadResponse = await r2r.documents.create({
@@ -109,44 +110,6 @@ export const uploadDocumentFromUrl = async (
       message: "Document from URL uploaded successfully",
       documentId: uploadResponse.results.documentId,
     });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Get user documents
-export const getUserDocuments = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const user = await User.findById(req?.user?._id);
-
-    if (!user) {
-      res.status(404).json({ message: "User not found" });
-      return;
-    }
-
-    if (!user.r2rDocumentIds || user.r2rDocumentIds.length === 0) {
-      res.json([]);
-      return;
-    }
-
-    // Fetch document details from R2R
-    const documents = [];
-
-    for (const docId of user.r2rDocumentIds) {
-      try {
-        const docDetails = await r2r.documents.retrieve({ id: docId });
-        documents.push(docDetails);
-      } catch (err) {
-        console.error(`Failed to fetch document ${docId}:`, err);
-        // Continue with next document even if one fails
-      }
-    }
-
-    res.json(documents);
   } catch (err) {
     next(err);
   }

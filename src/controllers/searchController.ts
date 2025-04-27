@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import r2r from "../config/r2r";
 import User from "../models/User";
-import SharedDoc from "../models/SharedDoc";
 import { WrappedDocumentsResponse } from "r2r-js";
 
 // Search across user's documents
@@ -11,94 +10,97 @@ export const searchDocuments = async (
   next: NextFunction
 ) => {
   try {
-    const { ids, limit = 10, offset = 0 } = req.body;
+    const { limit = 10, offset = 0 } = req.body;
 
-    // Set up search settings
-    const searchFilters = {
-      limit: parseInt(limit),
-      offset: 0,
-      ids: ids,
-    };
+    // Verify user exists and has documents
+    const user = await User.findById(req?.user?._id);
 
-    // Perform search
-    const searchResults: WrappedDocumentsResponse = await r2r.documents.list(
-      searchFilters
-    );
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
 
-    // Return results
-    res.json({
-      results: searchResults.results,
-      total: searchResults.totalEntries,
-    });
+    if (!user.r2rDocumentIds || user.r2rDocumentIds.length === 0) {
+      res.json({ results: [], total: 0 });
+      return;
+    }
+
+    // Fetch all documents
+    try {
+      const searchResults: WrappedDocumentsResponse = await r2r.documents.list({
+        limit: limit,
+        offset: offset,
+        ids: user.r2rDocumentIds,
+      });
+
+      res.json({
+        results: searchResults.results,
+        total: searchResults.totalEntries,
+      });
+      return;
+    } catch (error) {
+      console.error("Error retrieving documents:", error);
+      res.json({ results: [], total: 0 });
+      return;
+      // Results are returned in the try/catch block above
+      res.json({ results: [], total: 0 });
+    }
   } catch (err) {
     next(err);
   }
 };
 
-// Search documents by mentioning with @
-export const searchInlineDocuments = async (
+// Search for a single document by title
+export const searchSingleDocument = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const { query } = req.body;
+    const { title } = req.params;
 
-    // Get user's documents
+    if (!title) {
+      res.status(400).json({ message: "Document title is required" });
+      return;
+    }
+
+    // Verify user exists and has documents
     const user = await User.findById(req?.user?._id);
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      res.status(404).json({ message: "User not found" });
+      return;
     }
 
-    // Get shared documents
-    const sharedDocs = await SharedDoc.find({
-      $or: [
-        { isPublic: true },
-        { sharedWith: req?.user?._id },
-        { originalOwner: req?.user?._id },
-      ],
-    }).populate("originalOwner", "name");
+    if (!user.r2rDocumentIds || user.r2rDocumentIds.length === 0) {
+      res.json([]);
+      return;
+    }
 
-    // For inline search, we're searching document titles/metadata, not content
-    const ownedDocs = [];
+    // Fetch document details from R2R
+    const documents = [];
 
-    // Get document details from R2R for owned docs
+    // Retrieve all user documents
     for (const docId of user.r2rDocumentIds) {
       try {
-        const doc = await r2r.documents.get({ id: docId });
-        ownedDocs.push({
-          id: docId,
-          title: doc.metadata?.title || "Untitled",
-          owner: "You",
-          isOwned: true,
-        });
-      } catch (err) {
-        console.error(`Failed to fetch document ${docId}:`, err);
+        const document = await r2r.documents.retrieve({ id: docId });
+        documents.push(document.results);
+      } catch (error) {
+        console.error(`Error retrieving document ${docId}:`, error);
       }
     }
 
-    // Format shared docs
-    const formattedSharedDocs = sharedDocs.map((doc) => ({
-      id: doc.r2rDocumentId,
-      title: doc.title,
-      owner: doc.originalOwner.name,
-      isOwned: doc.originalOwner._id.toString() === req?.user?._id.toString(),
-    }));
+    // Search by title (case-insensitive)
+    const foundDocument = documents.find((doc) =>
+      doc.metadata.title?.toLowerCase().includes(title.toLowerCase())
+    );
 
-    // Combine and filter by query
-    const allDocs = [...ownedDocs, ...formattedSharedDocs];
+    if (!foundDocument) {
+      res.status(404).json({ message: "Document not found" });
+      return;
+    }
 
-    const filteredDocs = query
-      ? allDocs.filter((doc) =>
-          doc.title.toLowerCase().includes(query.toLowerCase())
-        )
-      : allDocs;
-
-    // Return formatted results for inline mention
-    res.json({
-      documents: filteredDocs.slice(0, 10), // Limit to 10 results for inline mention
-    });
+    res.json(foundDocument);
   } catch (err) {
     next(err);
   }
