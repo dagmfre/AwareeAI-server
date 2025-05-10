@@ -1,16 +1,15 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema } from "mongoose";
 
 interface ISharedDoc extends Document {
   title: string;
-  description?: string;
   r2rDocumentId: string;
   originalOwner: mongoose.Types.ObjectId;
-  sharedWith: mongoose.Types.ObjectId[];
-  isPublic: boolean;
-  dateShared: Date;
   tags?: string[];
   category?: string;
-  thumbnailUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  contentHash?: string;
+  metadata?: Record<string, any>;
 }
 
 const SharedDocSchema: Schema = new Schema({
@@ -18,39 +17,39 @@ const SharedDocSchema: Schema = new Schema({
     type: String,
     required: true,
   },
-  description: {
-    type: String,
-  },
   r2rDocumentId: {
     type: String,
     required: true,
   },
   originalOwner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: "User",
     required: true,
   },
-  sharedWith: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
-  isPublic: {
-    type: Boolean,
-    default: false,
-  },
-  dateShared: {
-    type: Date,
-    default: Date.now,
-  },
-  tags: [{
+  contentHash: {
     type: String,
-  }],
+    unique: true,
+    index: true,
+  },
+  tags: [
+    {
+      type: String,
+    },
+  ],
   category: {
     type: String,
   },
-  thumbnailUrl: {
-    type: String,
+  metadata: {
+    type: Schema.Types.Mixed,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
   },
 });
 
-export default mongoose.model<ISharedDoc>('SharedDoc', SharedDocSchema);
+export default mongoose.model<ISharedDoc>("SharedDoc", SharedDocSchema);

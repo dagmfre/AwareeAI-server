@@ -13,7 +13,7 @@ import auth from "../middleware/auth";
 const router = express.Router();
 
 // Create new chat
-router.post("/", auth, createChat);
+router.post("/create-chat", auth, createChat);
 
 // Send message in chat
 router.post("/:chatId", auth, sendMessage);

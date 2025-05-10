@@ -10,7 +10,7 @@ export interface IUser extends Document {
   avatarUrl?: string;
   dateJoined: Date;
   r2rDocumentIds: string[];
-  sharedWithMe: mongoose.Types.ObjectId[];
+  docsLibrary: string[]; // Added field for library documents
   comparePassword(password: string): Promise<boolean>;
   generateToken(): string;
 }
@@ -42,10 +42,10 @@ const UserSchema: Schema = new Schema({
       description: "Document IDs stored in R2R",
     },
   ],
-  sharedWithMe: [
+  docsLibrary: [
     {
-      type: Schema.Types.ObjectId,
-      ref: "SharedDoc",
+      type: String,
+      description: "Document IDs in user's library (both owned and shared)",
     },
   ],
 });

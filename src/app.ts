@@ -9,7 +9,6 @@ import auth from "./routes/auth";
 import document from "./routes/documents";
 import shared from "./routes/shared";
 import chats from "./routes/chats";
-import search from "./routes/search";
 
 // Create Express app
 const app = express();
@@ -38,10 +37,9 @@ app.use(
 
 // Routes
 app.use("/api/auth", auth);
-app.use("/api/documents", document);
+app.use("/api/document", document);
 app.use("/api/shared", shared);
-app.use("/api/chats", chats);
-app.use("/api/search", search);
+app.use("/api/chat", chats);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

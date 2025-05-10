@@ -220,9 +220,12 @@ export const getChatHistory = async (
   next: NextFunction
 ) => {
   try {
+    const { limit = 5, offset = 0 } = req.query;
+
     const chats = await Chat.find({ user: req?.user?._id })
       .sort({ updatedAt: -1 })
-      .select("title updatedAt");
+      .skip(Number(offset))
+      .limit(Number(limit))
 
     res.json(chats);
   } catch (err) {

@@ -4,7 +4,8 @@
   "description": "Documentation-Aware RAG Web App backend using TypeScript, MERN stack, and R2R for RAG implementation.",
   "main": "src/server.ts",
   "scripts": {
-    "start": "nodemon --exec ts-node src/server.ts",
+    "dev": "nodemon --exec ts-node src/server.ts",
+    "start": "node dist/server.js",
     "build": "tsc",
     "test": "jest"
   },
