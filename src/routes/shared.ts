@@ -8,7 +8,8 @@ import {
   removeFromLibrary,
   getUserLibrary,
   isInLibrary,
-  getSinglePublicDoc,
+  searchPublicDoc,
+  searchUserLibrary,
 } from "../controllers/sharedDocsController";
 import auth from "../middleware/auth";
 
@@ -25,12 +26,13 @@ router.get("/categories", getDocCategories);
 router.get("/tags", getDocTags);
 
 // Get specific shared doc
-router.get("/single-public", getSinglePublicDoc);
+router.get("/search-public", searchPublicDoc);
 
 // Library management
+router.get("/library", auth, getUserLibrary);
+router.get("/search-library", auth, searchUserLibrary);
 router.post("/library/:sharedDocId", auth, addToLibrary);
 router.delete("/library/:documentId", auth, removeFromLibrary);
-router.get("/library", auth, getUserLibrary);
 router.get("/library/check/:documentId", auth, isInLibrary);
 
 export default router;

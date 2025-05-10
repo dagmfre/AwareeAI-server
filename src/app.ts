@@ -37,9 +37,9 @@ app.use(
 
 // Routes
 app.use("/api/auth", auth);
-app.use("/api/document", document);
+app.use("/api/documents", document);
 app.use("/api/shared", shared);
-app.use("/api/chat", chats);
+app.use("/api/chats", chats);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

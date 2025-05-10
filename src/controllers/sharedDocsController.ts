@@ -152,7 +152,7 @@ export const getDocTags = async (
 };
 
 // Get a specific shared document
-export const getSinglePublicDoc = async (
+export const searchPublicDoc = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -319,6 +319,72 @@ export const getUserLibrary = async (
         limit,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Search user's library
+export const searchUserLibrary = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { title, id } = req.query as { title?: string; id?: string };
+
+    // Get user with library
+    const user = await User.findById(req?.user?._id);
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    if (!user.docsLibrary || user.docsLibrary.length === 0) {
+      res.status(404).json({ message: "Library is empty" });
+      return;
+    }
+
+    // If ID is provided, find by ID or r2rDocumentId
+    if (id) {
+      // Check if document is in user's library
+      if (!user.docsLibrary.includes(id)) {
+        res.status(404).json({ message: "Document not in library" });
+        return;
+      }
+
+      // Find document details
+      const document = await SharedDoc.findOne({
+        r2rDocumentId: id,
+      }).populate("originalOwner", "name email");
+
+      if (document) {
+        res.json({ document });
+        return;
+      }
+    }
+
+    // If title is provided, search by title within the library documents
+    if (title) {
+      const normalizedTitle = title.trim();
+
+      // Find documents that match the title and are in the user's library
+      const documents = await SharedDoc.find({
+        r2rDocumentId: { $in: user.docsLibrary },
+        title: { $regex: normalizedTitle, $options: "i" },
+      }).populate("originalOwner", "name email");
+
+      if (documents && documents.length > 0) {
+        res.json({
+          documents,
+          count: documents.length,
+        });
+        return;
+      }
+    }
+
+    res.status(404).json({ message: "Document not found in library" });
   } catch (err) {
     next(err);
   }
