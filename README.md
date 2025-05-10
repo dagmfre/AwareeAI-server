@@ -1,7 +1,7 @@
-# DocRag: Documentation-Aware RAG Web App
+# Awaree AI: Documentation-Aware RAG Web App
 
 ## Overview
-DocRag is a web application that allows users to interact with AI models using documentation. It leverages the MERN stack (MongoDB, Express, React, Node.js) along with TypeScript for type safety and improved developer experience. The application utilizes R2R for Retrieval-Augmented Generation (RAG) capabilities and SciPhi Cloud for document storage.
+Awaree AI is a web application that allows users to interact with AI models using documentation. It leverages the MERN stack (MongoDB, Express, React, Node.js) along with TypeScript for type safety and improved developer experience. The application utilizes R2R for Retrieval-Augmented Generation (RAG) capabilities and SciPhi Cloud for document storage.
 
 ## Features
 - User authentication and management
@@ -27,12 +27,10 @@ The backend is organized into several directories and files, each serving a spec
 1. Clone the repository:
    ```
    git clone <repository-url>
-   cd docrag/backend
-   ```
 
 2. Install dependencies:
    ```
-   npm install
+   pnpm install
    ```
 
 3. Create a `.env` file in the backend directory and add the necessary environment variables:
@@ -46,7 +44,7 @@ The backend is organized into several directories and files, each serving a spec
 
 4. Start the server:
    ```
-   npm run dev
+   pnpm run dev
    ```
 
 ## Usage
