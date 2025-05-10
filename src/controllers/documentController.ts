@@ -73,6 +73,29 @@ export const uploadDocument = async (
       },
     });
 
+    // Wait for document processing to complete before retrieving summary
+    let summary = null;
+    let maxRetries = 10;
+    let retryDelay = 2000; 
+
+    while (maxRetries > 0) {
+      const summaryResponse = await r2r.documents.retrieve({
+        id: documentId,
+      });
+
+      if (
+        summaryResponse.results.ingestionStatus === "success" &&
+        summaryResponse.results.summary !== null
+      ) {
+        summary = summaryResponse.results.summary;
+        break;
+      }
+
+      // Wait before trying again
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      maxRetries--;
+    }
+
     // Extract tags and category from request body
     const { tags = [], category = "uncategorized" } = req.body;
 
@@ -81,6 +104,7 @@ export const uploadDocument = async (
       title: req.file.originalname,
       r2rDocumentId: documentId,
       originalOwner: req?.user?._id,
+      summary: summary, // This could be null if processing didn't complete in time
       tags: tags,
       category: category,
       contentHash: contentHash,

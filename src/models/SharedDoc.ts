@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from "mongoose";
 interface ISharedDoc extends Document {
   title: string;
   r2rDocumentId: string;
+  summary?: string;
   originalOwner: mongoose.Types.ObjectId;
   tags?: string[];
   category?: string;
@@ -25,6 +26,9 @@ const SharedDocSchema: Schema = new Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
+  },
+  summary: {
+    type: String,
   },
   contentHash: {
     type: String,
