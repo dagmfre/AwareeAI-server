@@ -225,7 +225,7 @@ export const getChatHistory = async (
     const chats = await Chat.find({ user: req?.user?._id })
       .sort({ updatedAt: -1 })
       .skip(Number(offset))
-      .limit(Number(limit))
+      .limit(Number(limit));
 
     res.json(chats);
   } catch (err) {
@@ -257,7 +257,7 @@ export const getChat = async (
     // Combine MongoDB chat data with R2R conversation data
     const combinedChat = {
       ...chat.toObject(),
-      messages: r2rConversation.results[0].message || [],
+      messages: r2rConversation.results,
     };
 
     res.json(combinedChat);
