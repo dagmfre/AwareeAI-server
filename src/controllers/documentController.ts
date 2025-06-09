@@ -29,7 +29,7 @@ export const uploadDocument = async (
       await User.findByIdAndUpdate(req?.user?._id, {
         $addToSet: {
           r2rDocumentIds: duplicateDocId,
-          docsLibrary: duplicateDocId, // Add to library automatically
+          docsLibrary: duplicateDocId,
         },
       });
 

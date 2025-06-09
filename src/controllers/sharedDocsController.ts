@@ -3,66 +3,66 @@ import SharedDoc from "../models/SharedDoc";
 import User from "../models/User";
 
 // Share a document (may still be useful for manually updating sharing status)
-export const shareDoc = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { documentId, title, tags, category } = req.body;
+// export const shareDoc = async (
+//   req: Request,
+//   res: Response,
+//   next: NextFunction
+// ) => {
+//   try {
+//     const { documentId, title, tags, category } = req.body;
 
-    // Verify that the user owns this document
-    const user = await User.findById(req?.user?._id);
-    if (!user) {
-      res.status(404).json({ message: "User not found" });
-      return;
-    }
+//     // Verify that the user owns this document
+//     const user = await User.findById(req?.user?._id);
+//     if (!user) {
+//       res.status(404).json({ message: "User not found" });
+//       return;
+//     }
 
-    if (!user.r2rDocumentIds.includes(documentId)) {
-      res.status(403).json({ message: "You can only share documents you own" });
-      return;
-    }
+//     if (!user.r2rDocumentIds.includes(documentId)) {
+//       res.status(403).json({ message: "You can only share documents you own" });
+//       return;
+//     }
 
-    // Check if document is already shared
-    const existingSharedDoc = await SharedDoc.findOne({
-      r2rDocumentId: documentId,
-    });
+//     // Check if document is already shared
+//     const existingSharedDoc = await SharedDoc.findOne({
+//       r2rDocumentId: documentId,
+//     });
 
-    if (existingSharedDoc) {
-      // Update existing shared document
-      existingSharedDoc.title = title || existingSharedDoc.title;
-      existingSharedDoc.tags = tags || existingSharedDoc.tags;
-      existingSharedDoc.category = category || existingSharedDoc.category;
-      existingSharedDoc.updatedAt = new Date();
+//     if (existingSharedDoc) {
+//       // Update existing shared document
+//       existingSharedDoc.title = title || existingSharedDoc.title;
+//       existingSharedDoc.tags = tags || existingSharedDoc.tags;
+//       existingSharedDoc.category = category || existingSharedDoc.category;
+//       existingSharedDoc.updatedAt = new Date();
 
-      await existingSharedDoc.save();
+//       await existingSharedDoc.save();
 
-      res.status(200).json({
-        message: "Shared document updated successfully",
-        sharedDoc: existingSharedDoc,
-      });
-      return;
-    }
+//       res.status(200).json({
+//         message: "Shared document updated successfully",
+//         sharedDoc: existingSharedDoc,
+//       });
+//       return;
+//     }
 
-    // Create shared document record
-    const sharedDoc = new SharedDoc({
-      title,
-      r2rDocumentId: documentId,
-      originalOwner: req?.user?._id,
-      tags: tags || [],
-      category: category || "uncategorized",
-    });
+//     // Create shared document record
+//     const sharedDoc = new SharedDoc({
+//       title,
+//       r2rDocumentId: documentId,
+//       originalOwner: req?.user?._id,
+//       tags: tags || [],
+//       category: category || "uncategorized",
+//     });
 
-    await sharedDoc.save();
+//     await sharedDoc.save();
 
-    res.status(201).json({
-      message: "Document shared successfully",
-      sharedDoc,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
+//     res.status(201).json({
+//       message: "Document shared successfully",
+//       sharedDoc,
+//     });
+//   } catch (err) {
+//     next(err);
+//   }
+// };
 
 // Get all shared documents
 export const getPublicDocs = async (
@@ -223,43 +223,27 @@ export const addToLibrary = async (
       return;
     }
 
-    // Add the document to the user's library
-    await User.findByIdAndUpdate(req?.user?._id, {
-      $addToSet: { docsLibrary: sharedDoc.r2rDocumentId },
-    });
-
-    res.status(200).json({
-      message: "Document added to library successfully",
-      documentId: sharedDoc.r2rDocumentId,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Remove document from user's library
-export const removeFromLibrary = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { documentId } = req.params;
-
-    // Remove the document from the user's library
-    const user = await User.findByIdAndUpdate(
-      req?.user?._id,
-      { $pull: { docsLibrary: documentId } },
-      { new: true }
-    );
+    // Find the user
+    const user = await User.findById(req?.user?._id);
 
     if (!user) {
       res.status(404).json({ message: "User not found" });
       return;
     }
 
+    // Check for duplicate
+    if (user.docsLibrary.includes(sharedDoc.r2rDocumentId)) {
+      res.status(409).json({ message: "Document already in library" });
+      return;
+    }
+
+    // Add the document to the user's library
+    user.docsLibrary.push(sharedDoc.r2rDocumentId);
+    await user.save();
+
     res.status(200).json({
-      message: "Document removed from library successfully",
+      message: "Document added to library successfully",
+      documentId: sharedDoc.r2rDocumentId,
     });
   } catch (err) {
     next(err);
@@ -318,6 +302,35 @@ export const getUserLibrary = async (
         pages: Math.ceil(totalDocs / limit),
         limit,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Remove document from user's library
+export const removeFromLibrary = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { documentId } = req.params;
+
+    // Remove the document from the user's library
+    const user = await User.findByIdAndUpdate(
+      req?.user?._id,
+      { $pull: { docsLibrary: documentId } },
+      { new: true }
+    );
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Document removed from library successfully",
     });
   } catch (err) {
     next(err);

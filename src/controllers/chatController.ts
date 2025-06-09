@@ -75,34 +75,52 @@ export const sendMessage = async (
   res: Response,
   next: NextFunction
 ) => {
+  // Early setup of error handling for unexpected issues
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
   try {
     const { chatId } = req.params;
     const { message } = req.body;
 
     if (!message || typeof message !== "string") {
-      res.status(400).json({ message: "Valid message text is required" });
+      res.write(
+        `data: ${JSON.stringify({
+          error: "Valid message text is required",
+        })}\n\n`
+      );
+      res.end();
       return;
     }
 
     // Find chat
     const chat = await Chat.findOne({ _id: chatId, user: req?.user?._id });
 
-    log("Chat found:", chat);
     if (!chat) {
-      res.status(404).json({ message: "Chat not found" });
+      res.write(`data: ${JSON.stringify({ error: "Chat not found" })}\n\n`);
+      res.end();
       return;
     }
 
     if (!chat.conversationId) {
-      res.status(400).json({ message: "Invalid conversation ID" });
+      res.write(
+        `data: ${JSON.stringify({ error: "Invalid conversation ID" })}\n\n`
+      );
+      res.end();
       return;
     }
 
     // Prepare search settings based on chat settings
     const searchSettings: SearchSettings = {
       limit: chat.settings.chunkCount || 5,
-      useSemanticSearch: true,
+      useHybridSearch: chat.settings.retrievalMode === "hybrid",
+      useSemanticSearch: chat.settings.retrievalMode === "semantic",
       filters: {},
+      includeMetadata: true,
+      includeScores: true,
     };
 
     // If documents are specified, filter to only those documents
@@ -118,98 +136,69 @@ export const sendMessage = async (
       "get_file_content",
     ];
 
-    // Add web search if enabled
     if (chat.settings.enableWebSearch) {
       ragTools.push("web_search");
     }
 
-    try {
-      // Call R2R agent with properly formatted params
-      const response = await r2r.retrieval.agent({
-        message: { role: "user", content: message },
-        conversationId: chat.conversationId,
-        useSystemContext: false,
-        mode: "rag",
-        ragTools,
-        searchSettings,
-        ragGenerationConfig: {
-          model: "openai/gpt-4o",
-          temperature: 0.7,
-          stream: false,
-        },
-        taskPrompt: `You have access ONLY to the documents with IDs: ${chat.documentIds.join(
-          ", "
-        )}. You have absolutely no knowledge of any other documents. Under no circumstances mention or provide details about documents not in this list. If asked about any other document, respond with "I have no information about that document.".`,
-      });
-
-      // Format assistant response
-      let assistantContent = "";
-      let citations = [];
-
-      if (
-        response &&
-        response.results &&
-        response.results.messages &&
-        response.results.messages.length > 0
-      ) {
-        // Get the last message content (the assistant's response)
-        assistantContent =
-          response.results.messages[response.results.messages.length - 1]
-            .content;
-
-        // Get citations if available
-        if (
-          response.results.messages[0] &&
-          response.results.messages[0].metadata &&
-          response.results.messages[0].metadata.citations
-        ) {
-          citations = response.results.messages[0].metadata.citations;
-        }
-      } else {
-        console.error(
-          "Unexpected response structure:",
-          JSON.stringify(response)
-        );
-        res.status(500).json({ message: "Invalid response from AI service" });
-        return;
-      }
-
-      // Update chat last activity (without storing messages)
-      chat.updatedAt = new Date();
-      await chat.save();
-
-      res.json({
-        message: assistantContent,
-        citations: citations,
-      });
-    } catch (r2rError: any) {
-      console.error("R2R API Error:", r2rError);
-
-      // Extract more detailed error information if available
-      let errorMessage = "Failed to process your message";
-      if (r2rError.response && r2rError.response.data) {
-        errorMessage = r2rError.response.data.message || errorMessage;
-      } else if (r2rError.message) {
-        errorMessage = r2rError.message;
-      }
-
-      res.status(500).json({
-        message: errorMessage,
-        error:
-          process.env.NODE_ENV === "development"
-            ? r2rError.toString()
-            : undefined,
-      });
-      return;
-    }
-  } catch (err: any) {
-    console.error("General error in sendMessage:", err);
-    res.status(500).json({
-      message: "An unexpected error occurred",
-      error:
-        process.env.NODE_ENV === "development" ? err.toString() : undefined,
+    // Get the response stream from R2R
+    const response = await r2r.retrieval.agent({
+      message: { role: "user", content: message },
+      conversationId: chat.conversationId,
+      useSystemContext: false,
+      mode: "rag",
+      ragTools,
+      searchSettings,
+      ragGenerationConfig: {
+        model: chat.settings.model || "openai/gpt-4o",
+        stream: true,
+        maxTokens: chat.settings.maxTokens || 16000,
+        temperature: chat.settings.temperature || 0.7,
+      },
+      taskPrompt: `You have access ONLY to the documents with IDs: ${chat.documentIds.join(
+        ", "
+      )}. You have absolutely no knowledge of any other documents. Under no circumstances mention or provide details about documents not in this list. If asked about any other document, respond with "I have no information about that document.".`,
     });
-    return;
+
+    // Process the stream and forward it to the client
+    if (response) {
+      const reader = response.getReader();
+
+      // Process each chunk as it arrives
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        // Decode the chunk and forward it to the client
+        const chunk = new TextDecoder().decode(value);
+        res.write(chunk);
+
+        // Flush the response to ensure the client receives it immediately
+        res.flushHeaders();
+      }
+    }
+
+    // Ensure the session is updated after the chat
+    await Chat.updateOne(
+      { _id: chat._id },
+      {
+        $set: {
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    // End the response stream
+    res.end();
+  } catch (error) {
+    console.error("Error in chat handler:", error);
+    res.write(
+      `data: ${JSON.stringify({
+        error: "An error occurred while processing your request",
+      })}\n\n`
+    );
+    res.end();
   }
 };
 

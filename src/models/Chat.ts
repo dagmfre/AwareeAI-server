@@ -11,6 +11,10 @@ interface ChatSettings extends SearchSettings {
   model: string;
   enableWebSearch: boolean;
   stream: boolean;
+  chunkCount: number;
+  retrievalMode: "hybrid" | "semantic";
+  temperature: number;
+  maxTokens?: number;
 }
 
 interface ChatDocument extends Document {
@@ -79,7 +83,23 @@ const ChatSchema = new Schema({
       },
       stream: {
         type: Boolean,
-        default: false,
+        default: true,
+      },
+      chunkCount: {
+        type: Number,
+        default: 5,
+      },
+      retrievalMode: {
+        type: String,
+        enum: ["hybrid", "semantic"],
+        default: "hybrid",
+      },
+      temperature: {
+        type: Number,
+        default: 0.7,
+      },
+      maxTokens: {
+        type: Number,
       },
     },
     default: {},

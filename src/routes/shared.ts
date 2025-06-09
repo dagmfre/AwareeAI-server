@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  shareDoc,
+  // shareDoc,
   getPublicDocs,
   getDocCategories,
   getDocTags,
@@ -16,7 +16,7 @@ import auth from "../middleware/auth";
 const router = express.Router();
 
 // Share doc (kept for manual sharing if needed)
-router.post("/", auth, shareDoc);
+// router.post("/", auth, shareDoc);
 
 // Get public docs
 router.get("/public", getPublicDocs);
