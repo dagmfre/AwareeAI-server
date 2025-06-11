@@ -1,349 +1,48 @@
-import { Request, Response, NextFunction } from "express";
-import Chat from "../models/Chat";
-import SharedDoc from "../models/SharedDoc";
-import r2r from "../config/r2r";
-import User from "../models/User";
-import { log } from "console";
-import { SearchSettings } from "r2r-js";
+import { Request, Response } from "express";
+import prisma from "../config/prismaClient";
 
-// Create a new chat
-export const createChat = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const createChat = async (req: Request, res: Response) => {
   try {
     const { title, documentIds, settings } = req.body;
-
-    // Validate user access to documents
-    if (documentIds && documentIds.length > 0) {
-      const user = await User.findById(req?.user?._id);
-
-      if (!user) {
-        res.status(404).json({ message: "User not found" });
-        return;
+    const newChat = await prisma.chat.create({
+      data: {
+        userId: req.userId!,
+        title,
+        documentIds,
+        messages: [],
+        settings: settings ?? {}
       }
-
-      // Check if user has access to all selected documents
-      for (const docId of documentIds) {
-        // Check if user owns this document
-        const ownedByUser = user.r2rDocumentIds.includes(docId);
-
-        if (!ownedByUser) {
-          // Check if document is shared with user
-          const sharedDoc = await SharedDoc.findOne({
-            r2rDocumentId: docId,
-            $or: [
-              { isPublic: true },
-              { sharedWith: req?.user?._id },
-              { originalOwner: req?.user?._id },
-            ],
-          });
-
-          if (!sharedDoc) {
-            res.status(403).json({ message: `No access to document ${docId}` });
-            return;
-          }
-        }
-      }
-    }
-
-    const r2rConversation = await r2r.conversations.create(
-      title ? { name: title } : {}
-    );
-
-    // Create chat in MongoDB
-    const chat = new Chat({
-      title: title || "New Chat",
-      user: req?.user?._id,
-      documentIds: documentIds || [],
-      conversationId: r2rConversation.results.id,
-      settings: settings || {},
     });
-
-    await chat.save();
-
-    res.status(201).json(chat);
-  } catch (err) {
-    next(err);
+    res.status(201).json(newChat);
+  } catch (e) {
+    res.status(400).json({ error: "Failed to create chat: " + e.message });
   }
 };
 
-// Send message in chat
-export const sendMessage = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  // Early setup of error handling for unexpected issues
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
+export const getUserChats = async (req: Request, res: Response) => {
+  try {
+    const chats = await prisma.chat.findMany({ where: { userId: req.userId! } });
+    res.json(chats);
+  } catch (e) {
+    res.status(400).json({ error: "Failed to get chats" });
+  }
+};
 
+export const addMessage = async (req: Request, res: Response) => {
   try {
     const { chatId } = req.params;
     const { message } = req.body;
 
-    if (!message || typeof message !== "string") {
-      res.write(
-        `data: ${JSON.stringify({
-          error: "Valid message text is required",
-        })}\n\n`
-      );
-      res.end();
-      return;
-    }
-
-    // Find chat
-    const chat = await Chat.findOne({ _id: chatId, user: req?.user?._id });
-
-    if (!chat) {
-      res.write(`data: ${JSON.stringify({ error: "Chat not found" })}\n\n`);
-      res.end();
-      return;
-    }
-
-    if (!chat.conversationId) {
-      res.write(
-        `data: ${JSON.stringify({ error: "Invalid conversation ID" })}\n\n`
-      );
-      res.end();
-      return;
-    }
-
-    // Prepare search settings based on chat settings
-    const searchSettings: SearchSettings = {
-      limit: chat.settings.chunkCount || 5,
-      useHybridSearch: chat.settings.retrievalMode === "hybrid",
-      useSemanticSearch: chat.settings.retrievalMode === "semantic",
-      filters: {},
-      includeMetadata: true,
-      includeScores: true,
-    };
-
-    // If documents are specified, filter to only those documents
-    if (chat.documentIds && chat.documentIds.length > 0) {
-      // Ensure filters object exists
-      searchSettings.filters = searchSettings.filters || {};
-      searchSettings.filters.document_id = { $overlap: chat.documentIds };
-    }
-
-    const ragTools = [
-      "search_file_descriptions",
-      "search_file_knowledge",
-      "get_file_content",
-    ];
-
-    if (chat.settings.enableWebSearch) {
-      ragTools.push("web_search");
-    }
-
-    // Get the response stream from R2R
-    const response = await r2r.retrieval.agent({
-      message: { role: "user", content: message },
-      conversationId: chat.conversationId,
-      useSystemContext: false,
-      mode: "rag",
-      ragTools,
-      searchSettings,
-      ragGenerationConfig: {
-        model: chat.settings.model || "openai/gpt-4o",
-        stream: true,
-        maxTokens: chat.settings.maxTokens || 16000,
-        temperature: chat.settings.temperature || 0.7,
-      },
-      taskPrompt: `You have access ONLY to the documents with IDs: ${chat.documentIds.join(
-        ", "
-      )}. You have absolutely no knowledge of any other documents. Under no circumstances mention or provide details about documents not in this list. If asked about any other document, respond with "I have no information about that document.".`,
-    });
-
-    // Process the stream and forward it to the client
-    if (response) {
-      const reader = response.getReader();
-
-      // Process each chunk as it arrives
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
+    const chat = await prisma.chat.update({
+      where: { id: chatId },
+      data: {
+        messages: {
+          push: message // message is expected to be { role, content, timestamp, ... }
         }
-
-        // Decode the chunk and forward it to the client
-        const chunk = new TextDecoder().decode(value);
-        res.write(chunk);
-
-        // Flush the response to ensure the client receives it immediately
-        res.flushHeaders();
       }
-    }
-
-    // Ensure the session is updated after the chat
-    await Chat.updateOne(
-      { _id: chat._id },
-      {
-        $set: {
-          updatedAt: new Date(),
-        },
-      }
-    );
-
-    // End the response stream
-    res.end();
-  } catch (error) {
-    console.error("Error in chat handler:", error);
-    res.write(
-      `data: ${JSON.stringify({
-        error: "An error occurred while processing your request",
-      })}\n\n`
-    );
-    res.end();
-  }
-};
-
-// Get chat history
-export const getChatHistory = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { limit = 5, offset = 0 } = req.query;
-
-    const chats = await Chat.find({ user: req?.user?._id })
-      .sort({ updatedAt: -1 })
-      .skip(Number(offset))
-      .limit(Number(limit));
-
-    res.json(chats);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Get specific chat
-export const getChat = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { chatId } = req.params;
-
-    // Find the chat in our database
-    const chat = await Chat.findOne({ _id: chatId, user: req?.user?._id });
-    if (!chat) {
-      res.status(404).json({ message: "Chat not found" });
-      return;
-    }
-
-    // Get conversation details from R2R
-    const r2rConversation = await r2r.conversations.retrieve({
-      id: chat.conversationId as string,
     });
-
-    // Combine MongoDB chat data with R2R conversation data
-    const combinedChat = {
-      ...chat.toObject(),
-      messages: r2rConversation.results,
-    };
-
-    res.json(combinedChat);
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const updateChatSettings = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { chatId } = req.params;
-    const { settings } = req.body;
-
-    const chat = await Chat.findOneAndUpdate(
-      { _id: chatId, user: req?.user?._id },
-      { settings },
-      { new: true }
-    );
-
-    if (!chat) {
-      res.status(404).json({ message: "Chat not found" });
-      return;
-    }
-
-    res.json(chat);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Update chat settings
-export const updateChatName = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { chatId } = req.params;
-    const { title } = req.body;
-
-    const chat = await Chat.findOne({ _id: chatId, user: req?.user?._id });
-    if (!chat) {
-      res.status(404).json({ message: "Chat not found" });
-      return;
-    }
-
-    // Update R2R conversation name if title is provided
-    if (title) {
-      await r2r.conversations.update({
-        id: chat.conversationId as string,
-        name: title,
-      });
-      chat.title = title;
-    }
-
-    await chat.save();
-
-    res.json(chat);
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Delete chat
-export const deleteChat = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const { chatId } = req.params;
-
-    const chat = await Chat.findOneAndDelete({
-      _id: chatId,
-      user: req?.user?._id,
-    });
-    if (!chat) {
-      res.status(404).json({ message: "Chat not found" });
-      return;
-    }
-
-    // Try to delete the R2R conversation as well
-    try {
-      if (chat.conversationId) {
-        await r2r.conversations.delete({ id: chat.conversationId });
-      }
-    } catch (r2rErr) {
-      console.error("Failed to delete R2R conversation:", r2rErr);
-      // Continue despite R2R error
-    }
-
-    res.json({ message: "Chat deleted successfully" });
-  } catch (err) {
-    next(err);
+    res.status(200).json(chat);
+  } catch (e) {
+    res.status(400).json({ error: "Failed to add message: " + e.message });
   }
 };

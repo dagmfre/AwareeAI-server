@@ -9,6 +9,31 @@ import auth from "./routes/auth";
 import document from "./routes/documents";
 import shared from "./routes/shared";
 import chats from "./routes/chats";
+import prisma from "./config/prismaClient";
+
+const test = async () => {
+  const newUser = await prisma.user.create({
+    data: {
+      name: "Alice",
+      email: "alice@gmail.com",
+      password: "password123",
+      avatarUrl: "https://example.com/avatar/alice.png",
+    },
+  });
+
+  const users = await prisma.user.findMany();
+  console.log("New User:", newUser);
+};
+
+// Test Prisma connection (optional, can be removed in production)
+test()
+  .catch((e) => {
+    console.error("Error connecting to the database:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
 
 // Create Express app
 const app = express();
@@ -26,7 +51,7 @@ app.use(
 
       if (config.allowedOrigins.indexOf(origin) === -1) {
         const msg =
-        "The CORS policy for this site does not allow access from the specified Origin.";
+          "The CORS policy for this site does not allow access from the specified Origin.";
         return callback(new Error(msg), false);
       }
       return callback(null, true);
