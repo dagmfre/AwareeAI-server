@@ -1,0 +1,133 @@
+Assistant
+Absolutely! Here is a clear, realistic end-to-end testing proposal for your Node.js “Documentation-Aware AI” backend, using an imaginary user “Mr. X”. The journey is mapped step-by-step, covering which backend route is triggered at each step.
+
+Testing Proposal: Mr. X's End-to-End Journey
+Imaginable User: Mr. X (email: mr.x@example.com)
+
+1. Registration
+Action: Mr. X opens the web app and registers with his email and password.
+Backend Route Triggered:
+POST /auth/register
+Test:
+Send JSON
+{ email: "mr.x@example.com", password: "testpass123", displayName: "Mr. X" }
+Expect 201, user record in DB, Supabase user created, synced with R2R.
+2. Login & Session Creation
+Action: Mr. X logs in.
+Backend Route Triggered:
+POST /auth/login
+Test:
+Send
+{ email: "mr.x@example.com", password: "testpass123" }
+Expect valid JWT/session, stored in backend, receive access token.
+3. Access Dashboard: See Docs & Recent Chats
+Action: Mr. X opens dashboard after login.
+Backend Route Triggered (docs):
+GET /document/my
+Backend Route Triggered (chats):
+GET /chat/list
+Test:
+Both endpoints return empty arrays initially (no docs, no chats yet).
+4. Document Upload (File or URL)
+Action: Mr. X uploads a PDF file “Library_XYZ_API.pdf”, marks it as public (shared).
+Backend Route Triggered:
+POST /document/upload
+
+(multipart/form)
+Test:
+File saved to Supabase Storage.
+Metadata:
+{ userId, fileName, isPublic: true, ... }
+in DB.
+File ingested by R2R, r2rDocId linked.
+5. See Own Docs
+Action: Mr. X checks "My Docs."
+Backend Route Triggered:
+GET /document/my
+Test:
+Should see an array with at least one document: “Library_XYZ_API.pdf”, isPublic=true.
+6. See/Explore Shared Docs
+Action: Mr. X looks at all shared documents.
+Backend Route Triggered:
+GET /shared-docs
+Test:
+Should see his own public document and docs uploaded by other users (if any).
+7. Start New Chat
+Action: Mr. X starts a chat about “Library XYZ API”.
+Backend Route Triggered:
+POST /chat/new
+
+{ title: "Library XYZ discussion", config: {...} }
+Test:
+Creates a new chat record with title and settings.
+8. Chat: AI Query With Document Context
+Action: Mr. X (in chat) writes:
+“How do I authenticate with Library XYZ?” and picks his own uploaded doc in the UI (or also selects another shared doc).
+Backend Route Triggered:
+POST /chat/send
+
+Body:
+{
+  chatId: "<from previous step>",
+  message: "How do I authenticate with Library XYZ?",
+  selectedDocIds: ["<Mr X's doc id>", "<optional another shared doc id>"],
+  config: {
+    llm: "google/gemini-pro",
+    retrievalMode: "hybrid",
+    numChunks: 7,
+    webSearchEnabled: false
+  }
+}
+Test:
+Query hits Node backend, which calls local R2R at
+/v3/retrieval/rag
+with proper user/document context.
+Response saved as a
+Message
+in the chat, answer and source docs returned in response.
+9. See Chat History/Trace
+Action: Mr. X navigates away, returns to chat.
+Backend Route Triggered:
+GET /chat/list
+or
+GET /chat/:chatId
+(if you implement this)
+Test:
+Previous chat, messages, and related document citations should appear.
+10. Mr. X Sees Docs/Citations from Others
+Action: Mr. X selects another user's public doc and asks a new question.
+Backend Route Triggered:
+POST /chat/send
+
+(with selectedDocIds = another user's doc)
+Test:
+Same context as above—system responds based on that document.
+11. Logging Out
+Action: Mr. X logs out.
+Backend Route Triggered:
+(optional) e.g.,
+/auth/logout
+(delete/revoke session)
+Test:
+Frontend clears session/JWT, backend marks session inactive.
+12. Error & Security Checks
+Test cases:
+Try an invalid token: all
+/document/*
+,
+/chat/*
+,
+/shared-docs
+should return 401.
+Try uploading a file with an unsupported format.
+Try querying a private document (not owned by Mr. X and not public).
+Summary Table
+| User Step | Route | Test/Expected Response | |------------------------------------|------------- |---------------------------------------------------| | Registration | POST /auth/register | User created, status 201 | | Login | POST /auth/login | JWT/Session token, user data | | Dashboard: My Docs/Chats | GET /document/my, GET /chat/list | Empty lists | | Upload Document | POST /document/upload | Doc saved in DB, uploaded, ingested | | See My Docs | GET /document/my | See uploaded doc (isPublic true) | | Explore Shared Docs | GET /shared-docs | See all public docs with uploader | | Start New Chat | POST /chat/new | Chat created, id returned | | Chat (query with docs) | POST /chat/send | AI answer, RAG context, message saved | | View Chat History | GET /chat/list | Chat and messages appear | | Log Out | /auth/logout? | Tokens cleared |
+
+How to Automate Tests?
+Use Jest (Node.js), Supertest, or Postman collections
+Sequence test requests as per journey above
+Mock or actually upload a small PDF for Mr. X
+Validate all DB records (users, docs, chats)
+Print/inspect response for document citations/context in RAG
+This process will test your backend as a real developer-user and show any flaws in onboarding, doc upload/indexing, sharing, querying, or security! Want Postman collection JSON or Jest code examples for any of these? Just ask!

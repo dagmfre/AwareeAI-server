@@ -1,0 +1,27 @@
+# r2r/custom_r2r.toml
+
+[app]
+quality_llm = "openai/gpt-4o"
+fast_llm = "openai/gpt-4o-mini"
+
+# Retrieval engine config
+[retrieval]
+num_chunks = 7            # Default, overridable per request
+retrieval_mode = "hybrid" # "semantic" | "hybrid" | "keyword"
+
+# Optional advanced LLM completion config
+[completion.generation_config]
+temperature = 0.1
+top_p = 0.95
+max_tokens_to_sample = 1024
+
+# User Auth/Authz fine-tuning (see R2R docs for more options)
+[auth]
+enable = true
+
+# File storage (if managed by R2R—see your PDF for details; if R2R is to push to Supabase)
+[filestorage]
+provider = "supabase"
+supabase_url = "https://your.supabase.co"
+supabase_bucket = "documents"
+supabase_service_key = "your-supabase-service-role-key"

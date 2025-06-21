@@ -1,77 +1,55 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import morgan from "morgan";
-import config from "./config/default";
+import cookieParser from "cookie-parser";
+import authRoutes from "./routes/authRoutes";
+import chatRoutes from "./routes/chatRoutes";
+import documentRoutes from "./routes/documentRoutes";
+import sharedDocsRoutes from "./routes/sharedDocsRoutes";
 import errorHandler from "./middleware/errorHandler";
+import { NotFoundError } from "./utils/errors";
 
-// Import routes
-import auth from "./routes/auth";
-import document from "./routes/documents";
-import shared from "./routes/shared";
-import chats from "./routes/chats";
-import prisma from "./config/prismaClient";
-
-const test = async () => {
-  const newUser = await prisma.user.create({
-    data: {
-      name: "Alice",
-      email: "alice@gmail.com",
-      password: "password123",
-      avatarUrl: "https://example.com/avatar/alice.png",
-    },
-  });
-
-  const users = await prisma.user.findMany();
-  console.log("New User:", newUser);
-};
-
-// Test Prisma connection (optional, can be removed in production)
-test()
-  .catch((e) => {
-    console.error("Error connecting to the database:", e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
-
-// Create Express app
 const app = express();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(morgan("dev"));
+// Request ID middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  req.headers["x-request-id"] =
+    req.headers["x-request-id"] || Math.random().toString(36).substring(2, 15);
+  next();
+});
 
-// CORS configuration
+// Middleware
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-
-      if (config.allowedOrigins.indexOf(origin) === -1) {
-        const msg =
-          "The CORS policy for this site does not allow access from the specified Origin.";
-        return callback(new Error(msg), false);
-      }
-      return callback(null, true);
-    },
+    origin: process.env.CLIENT_ORIGIN || true,
     credentials: true,
   })
 );
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cookieParser());
 
-// Routes
-app.use("/api/auth", auth);
-app.use("/api/documents", document);
-app.use("/api/shared", shared);
-app.use("/api/chats", chats);
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+// Health check
+app.get("/", (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: "Welcome to AwareeAI API!",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Error handling middleware
+// API Routes
+app.use("/auth", authRoutes);
+app.use("/chat", chatRoutes);
+app.use("/document", documentRoutes);
+app.use("/shared-docs", sharedDocsRoutes);
+
+// 404 Handler
+app.use((_req: Request, _res: Response, next: NextFunction) => {
+  next(new NotFoundError("API endpoint not found"));
+});
+
+// Global Error Handler (must be last)
 app.use(errorHandler);
 
 export default app;
