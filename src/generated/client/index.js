@@ -35,12 +35,12 @@ exports.Prisma = Prisma
 exports.$Enums = {}
 
 /**
- * Prisma Client JS version: 6.10.1
- * Query Engine version: 9b628578b3b7cae625e8c927178f15a170e74a9c
+ * Prisma Client JS version: 6.11.1
+ * Query Engine version: f40f79ec31188888a2e33acda0ecc8fd10a853a9
  */
 Prisma.prismaVersion = {
-  client: "6.10.1",
-  engine: "9b628578b3b7cae625e8c927178f15a170e74a9c"
+  client: "6.11.1",
+  engine: "f40f79ec31188888a2e33acda0ecc8fd10a853a9"
 }
 
 Prisma.PrismaClientKnownRequestError = PrismaClientKnownRequestError;
@@ -204,8 +204,8 @@ const config = {
     "schemaEnvPath": "../../../.env"
   },
   "relativePath": "../../../prisma",
-  "clientVersion": "6.10.1",
-  "engineVersion": "9b628578b3b7cae625e8c927178f15a170e74a9c",
+  "clientVersion": "6.11.1",
+  "engineVersion": "f40f79ec31188888a2e33acda0ecc8fd10a853a9",
   "datasourceNames": [
     "db"
   ],
@@ -213,13 +213,13 @@ const config = {
   "inlineDatasources": {
     "db": {
       "url": {
-        "fromEnvVar": "TRANSACTION_POOLER_URL",
+        "fromEnvVar": "DATABASE_URL",
         "value": null
       }
     }
   },
-  "inlineSchema": "generator client {\n  provider = \"prisma-client-js\"\n  output   = \"../src/generated/client\"\n}\n\ndatasource db {\n  provider     = \"postgresql\"\n  url          = env(\"TRANSACTION_POOLER_URL\")\n  // directUrl = env(\"DIRECT_URL\")\n  relationMode = \"prisma\"\n}\n\nmodel User {\n  id          String     @id @default(uuid())\n  email       String     @unique\n  password    String?\n  displayName String?\n  createdAt   DateTime   @default(now())\n  updatedAt   DateTime   @default(now()) @updatedAt\n  sessions    Session[]\n  chats       Chat[]\n  documents   Document[]\n}\n\nmodel Session {\n  id        String   @id @default(uuid())\n  user      User     @relation(fields: [userId], references: [id])\n  userId    String\n  token     String   @unique\n  createdAt DateTime @default(now())\n  expiresAt DateTime\n}\n\nmodel Chat {\n  id        String    @id @default(uuid())\n  user      User      @relation(fields: [userId], references: [id])\n  userId    String\n  title     String?\n  messages  Message[]\n  createdAt DateTime  @default(now())\n  updatedAt DateTime  @updatedAt\n}\n\nmodel Message {\n  id        String   @id @default(uuid())\n  chat      Chat     @relation(fields: [chatId], references: [id])\n  chatId    String\n  sender    String // \"user\" | \"assistant\"\n  content   String\n  createdAt DateTime @default(now())\n  context   Json? // optionally store extra RAG/trace info\n}\n\nmodel Document {\n  id         String   @id @default(uuid())\n  user       User     @relation(fields: [userId], references: [id])\n  userId     String\n  fileName   String\n  storageUrl String // Supabase file storage URL\n  r2rDocId   String? // Document ID in R2R’s DB\n  uploadedAt DateTime @default(now())\n  isPublic   Boolean\n}\n",
-  "inlineSchemaHash": "3b85e86877bb407822bcad04dce1c63fa07f186e987e2eb490623fdb3bd5958c",
+  "inlineSchema": "generator client {\n  provider = \"prisma-client-js\"\n  output   = \"../src/generated/client\"\n}\n\ndatasource db {\n  provider  = \"postgresql\"\n  url       = env(\"DATABASE_URL\")\n  directUrl = env(\"DIRECT_URL\")\n}\n\nmodel User {\n  id          String     @id @default(uuid())\n  email       String     @unique\n  password    String?\n  displayName String?\n  createdAt   DateTime   @default(now())\n  updatedAt   DateTime   @default(now()) @updatedAt\n  sessions    Session[]\n  chats       Chat[]\n  documents   Document[]\n}\n\nmodel Session {\n  id        String   @id @default(uuid())\n  user      User     @relation(fields: [userId], references: [id])\n  userId    String\n  token     String   @unique\n  createdAt DateTime @default(now())\n  expiresAt DateTime\n}\n\nmodel Chat {\n  id        String    @id @default(uuid())\n  user      User      @relation(fields: [userId], references: [id])\n  userId    String\n  title     String?\n  messages  Message[]\n  createdAt DateTime  @default(now())\n  updatedAt DateTime  @updatedAt\n}\n\nmodel Message {\n  id        String   @id @default(uuid())\n  chat      Chat     @relation(fields: [chatId], references: [id])\n  chatId    String\n  sender    String // \"user\" | \"assistant\"\n  content   String\n  createdAt DateTime @default(now())\n  context   Json? // optionally store extra RAG/trace info\n}\n\nmodel Document {\n  id         String   @id @default(uuid())\n  user       User     @relation(fields: [userId], references: [id])\n  userId     String\n  fileName   String\n  storageUrl String // Supabase file storage URL\n  r2rDocId   String? // Document ID in R2R’s DB\n  uploadedAt DateTime @default(now())\n  isPublic   Boolean\n}\n",
+  "inlineSchemaHash": "4fe2081a9d5f5110a5d521a533cfe6261c070dd1ae7b9d943caf726eb47c6902",
   "copyEngine": true
 }
 

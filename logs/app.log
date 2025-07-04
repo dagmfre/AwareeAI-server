@@ -1,0 +1,2 @@
+2025-06-20 21:46:24 - [32mINFO[0m - Logging is configured at INFO level.[0m
+2025-06-20 21:46:25 - [31mERROR[0m - Failed to start R2R server: [Errno 2] No such file or directory: 'custom_gemini_r2r.toml'[0m

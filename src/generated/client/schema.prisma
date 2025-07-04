@@ -4,10 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider     = "postgresql"
-  url          = env("TRANSACTION_POOLER_URL")
-  // directUrl = env("DIRECT_URL")
-  relationMode = "prisma"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -29,15 +28,6 @@ model Session {
   token     String   @unique
   createdAt DateTime @default(now())
   expiresAt DateTime
-}
-
-model ApiKey {
-  id        String    @id @default(uuid())
-  userId    String
-  key       String    @unique
-  createdAt DateTime  @default(now())
-  expiresAt DateTime?
-  isActive  Boolean   @default(true)
 }
 
 model Chat {

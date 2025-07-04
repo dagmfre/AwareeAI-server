@@ -1,27 +1,34 @@
-# r2r/custom_r2r.toml
-
 [app]
-quality_llm = "openai/gpt-4o"
-fast_llm = "openai/gpt-4o-mini"
+fast_llm = "gemini/gemini-2.0-flash-lite"
+quality_llm = "gemini/gemini-2.0-flash"
+vlm = "gemini/gemini-2.0-flash"
+audio_lm = "gemini/gemini-2.0-flash-lite"
 
-# Retrieval engine config
-[retrieval]
-num_chunks = 7            # Default, overridable per request
-retrieval_mode = "hybrid" # "semantic" | "hybrid" | "keyword"
+[completion]
+provider = "r2r"
+concurrent_request_limit = 16 # Adjust to your infra/resources
 
-# Optional advanced LLM completion config
 [completion.generation_config]
 temperature = 0.1
-top_p = 0.95
-max_tokens_to_sample = 1024
+top_p = 1.0
+max_tokens_to_sample = 4096
+stream = false
+add_generation_kwargs = {}
 
-# User Auth/Authz fine-tuning (see R2R docs for more options)
+[database]
+provider = "postgres"
+user = "postgres.bbzxfkkhuttmtwffdift"
+password = "dag13645440"
+host = "aws-0-us-east-2.pooler.supabase.com"
+port = 5432
+db_name = "postgres"
+project_name = "AwareeAI"
+
 [auth]
-enable = true
-
-# File storage (if managed by R2R—see your PDF for details; if R2R is to push to Supabase)
-[filestorage]
 provider = "supabase"
-supabase_url = "https://your.supabase.co"
-supabase_bucket = "documents"
-supabase_service_key = "your-supabase-service-role-key"
+
+[filestorage]
+provider = "s3"
+endpoint_url = "https://bbzxfkkhuttmtwffdift.supabase.co/storage/v1/s3"
+bucket_name = "aware-ai-bucket"
+region_name = "us-east-2"
