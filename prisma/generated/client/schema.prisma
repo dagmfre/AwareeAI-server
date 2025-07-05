@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id          String     @id @default(cuid())
+  email       String     @unique
+  password    String?
+  createdAt   DateTime   @default(now())
+  displayName String?
+  updatedAt   DateTime   @default(now()) @updatedAt
+  chats       Chat[]
+  documents   Document[]
+  Session     Session[]
+}
+
+model Document {
+  id         String         @id @default(cuid())
+  userId     String
+  fileName   String
+  storageUrl String
+  r2rDocId   String?
+  uploadedAt DateTime       @default(now())
+  isPublic   Boolean
+  user       User           @relation(fields: [userId], references: [id])
+  chats      ChatDocument[]
+}
+
+model Chat {
+  id        String         @id @default(cuid())
+  title     String?
+  userId    String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  user      User           @relation(fields: [userId], references: [id])
+  messages  Message[]
+  documents ChatDocument[]
+}
+
+model ChatDocument {
+  chatId     String
+  documentId String
+  chat       Chat     @relation(fields: [chatId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id])
+
+  @@id([chatId, documentId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  sender    String
+  content   String
+  createdAt DateTime @default(now())
+  context   Json?
+  chat      Chat     @relation(fields: [chatId], references: [id])
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  User      User     @relation(fields: [userId], references: [id])
+}

@@ -1,139 +1,186 @@
 import { Request, Response } from "express";
-import { supabase } from "../config/supabaseClient";
-import { PrismaClient } from "@prisma/client";
-import axios from "axios";
-import { getUserFromReq } from "../middleware/authMiddleware";
-import { v4 as uuidv4 } from "uuid";
+import * as documentService from "../services/documentService";
+import r2rClient from "../config/r2r";
+import { logger } from "../utils/logger";
+import FormData from "form-data";
 
-const prisma = new PrismaClient();
-
-// Helper to get correct bucket and path
-const DOC_BUCKET = process.env.SUPABASE_BUCKET!;
-if (!DOC_BUCKET) {
-  throw new Error("SUPABASE_BUCKET environment variable is not set.");
-}
-
-// Upload and ingest
-export const uploadDocument = async (req: Request, res: Response) => {
-  /*
-    req.files (from multer)
-    req.body: { isPublic }
-  */
+export const upload = async (req: Request, res: Response) => {
   try {
-    const user = await getUserFromReq(req);
+    const userId = (req as any).user.id;
     const file = req.file;
+    const { title, description, isPublic } = req.body;
+    if (!file) return;
+    res.status(400).json({ error: "File required" });
 
-    if (!file) {
-      res.status(400).json({ error: "No file uploaded." });
-      return;
-    }
+    const formData = new FormData();
+    formData.append("file", file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype,
+    });
+    formData.append("metadata", JSON.stringify({ title, description, userId }));
+    formData.append("ingestion_mode", "hi-res");
 
-    // Save file to Supabase Storage
-    const ext = file.originalname.split(".").pop();
-    const supaPath = `${user.id}/${uuidv4()}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(DOC_BUCKET)
-      .upload(supaPath, file.buffer, {
-        contentType: file.mimetype,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      res.status(500).json({ error: uploadError.message });
-      return;
-    }
-
-    // Get the public URL
-    const { data: publicUrlData } = supabase.storage
-      .from(DOC_BUCKET)
-      .getPublicUrl(supaPath);
-
-    if (!publicUrlData?.publicUrl) {
-      res.status(500).json({ error: "Failed to get public URL." });
-      return;
-    }
-
-    const isPublic = req.body.isPublic === "true" || req.body.isPublic === true;
-
-    // Save to DB (post-upload)
-    const docRecord = await prisma.document.create({
-      data: {
-        userId: user.id,
-        fileName: file.originalname,
-        storageUrl: publicUrlData.publicUrl,
-        isPublic,
-      },
+    const r2rResponse = await r2rClient.post("/v3/documents", formData, {
+      headers: formData.getHeaders(),
+    });
+    const document = await documentService.createDocument({
+      title: title || file.originalname,
+      description,
+      userId,
+      r2rDocumentId: r2rResponse.data.results.document_id,
+      isPublic: isPublic === "true" || isPublic === true,
+      fileName: file.originalname,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      status: "processing",
     });
 
-    // Ingest into R2R (self-hosted instance, /v3/documents/create)
+    res.status(201).json({
+      message: "Document uploaded",
+      document,
+      r2rResponse: r2rResponse.data,
+    });
+  } catch (error: any) {
+    logger.error("Document upload error:", error);
+    res.status(500).json({ error: error.message || "Document upload failed" });
+  }
+};
+
+export const uploadByUrl = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { url, title, description, isPublic } = req.body;
+    if (!url) res.status(400).json({ error: "URL required" });
+
+    const r2rResponse = await r2rClient.post("/v3/documents", {
+      raw_text: `URL: ${url}`,
+      metadata: JSON.stringify({
+        title: title || "URL Document",
+        description,
+        userId,
+        sourceUrl: url,
+        type: "url",
+      }),
+      ingestion_mode: "hi-res",
+    });
+
+    const document = await documentService.createDocument({
+      title: title || "URL Document",
+      description,
+      userId,
+      r2rDocumentId: r2rResponse.data.results.document_id,
+      isPublic: isPublic === "true" || isPublic === true,
+      sourceUrl: url,
+      status: "processing",
+    });
+
+    res.status(201).json({
+      message: "Document from URL added",
+      document,
+      r2rResponse: r2rResponse.data,
+    });
+  } catch (error: any) {
+    logger.error("URL document error:", error);
+    res
+      .status(500)
+      .json({ error: error.message || "Failed to add document from URL" });
+  }
+};
+
+export const list = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { page = 1, limit = 10, search } = req.query;
+    const documents = await documentService.getUserDocuments(userId, {
+      page: parseInt(page as string),
+      limit: parseInt(limit as string),
+      search: search as string,
+    });
+    res.json(documents);
+  } catch (error: any) {
+    logger.error("List documents error:", error);
+    res.status(500).json({ error: "Failed to retrieve documents" });
+  }
+};
+
+export const get = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const document = await documentService.getDocument(id, userId);
+    if (!document) return;
+    res.status(404).json({ error: "Document not found" });
     try {
-      const r2rRes = await axios.post(
-        process.env.R2R_URL + "/v3/documents/create",
-        {
-          source_type: "url",
-          url: docRecord.storageUrl,
-          user_id: user.id, // for doc scoping
-          name: docRecord.fileName,
-        },
-        {
-          headers: { "x-r2r-api-key": process.env.R2R_API_KEY },
-        }
+      const r2rDocument = await r2rClient.get(
+        `/v3/documents/${document.r2rDocId}`
       );
-
-      // Save the R2R document id for future queries
-      await prisma.document.update({
-        where: { id: docRecord.id },
-        data: { r2rDocId: r2rRes.data.id },
-      });
-
-      res.status(201).json({
-        id: docRecord.id,
-        fileName: docRecord.fileName,
-        storageUrl: docRecord.storageUrl,
-        isPublic,
-        r2rDocId: r2rRes.data.id,
-      });
-      return;
-    } catch (e: any) {
-      // You may want to log or retry ingest if R2R fails
-      res.status(500).json({ error: "R2R ingest failed", details: e.message });
-      return;
+      (document as any).r2rData = r2rDocument.data.results;
+    } catch (r2rError) {
+      logger.warn("Failed to get R2R document details:", r2rError);
     }
-  } catch (e: any) {
-    res.status(500).json({ error: "Unexpected error", details: e.message });
-    return;
+    res.json({ document });
+  } catch (error: any) {
+    logger.error("Get document error:", error);
+    res.status(500).json({ error: "Failed to retrieve document" });
   }
 };
 
-/** List all a user's docs */
-export const getUserDocuments = async (req: Request, res: Response) => {
+export const update = async (req: Request, res: Response) => {
   try {
-    const user = await getUserFromReq(req);
-    const docs = await prisma.document.findMany({
-      where: { userId: user.id },
-    });
-    res.json(docs);
-  } catch (e: any) {
-    res
-      .status(500)
-      .json({ error: "Failed to fetch user documents", details: e.message });
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const updates = req.body;
+    const document = await documentService.updateDocument(id, userId, updates);
+    if (!document) return;
+    res.status(404).json({ error: "Document not found" });
+    res.json({ message: "Document updated", document });
+  } catch (error: any) {
+    logger.error("Update document error:", error);
+    res.status(500).json({ error: "Failed to update document" });
   }
 };
 
-/** List all shared (public) docs */
-export const getSharedDocuments = async (_req: Request, res: Response) => {
+export const remove = async (req: Request, res: Response) => {
   try {
-    const docs = await prisma.document.findMany({
-      where: { isPublic: true },
-      include: {
-        user: { select: { displayName: true, email: true, id: true } },
-      },
-    });
-    res.json(docs); // for shared-docs page
-  } catch (e: any) {
-    res
-      .status(500)
-      .json({ error: "Failed to fetch shared documents", details: e.message });
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const document = await documentService.getDocument(id, userId);
+    if (!document) return;
+    res.status(404).json({ error: "Document not found" });
+    try {
+      await r2rClient.delete(`/v3/documents/${document.r2rDocId}`);
+    } catch (r2rError) {
+      logger.warn("Failed to delete from R2R:", r2rError);
+    }
+    await documentService.deleteDocument(id, userId);
+    res.json({ message: "Document deleted" });
+  } catch (error: any) {
+    logger.error("Delete document error:", error);
+    res.status(500).json({ error: "Failed to delete document" });
+  }
+};
+
+export const download = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const document = await documentService.getDocument(id, userId);
+    if (!document) return;
+    res.status(404).json({ error: "Document not found" });
+    const response = await r2rClient.get(
+      `/v3/documents/${document.r2rDocId}/download`,
+      { responseType: "stream" }
+    );
+    // Use mimeType if present, otherwise default to 'application/octet-stream'
+    const mimeType = (document as any).mimeType || "application/octet-stream";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${document.fileName}"`
+    );
+    response.data.pipe(res);
+  } catch (error: any) {
+    logger.error("Download document error:", error);
+    res.status(500).json({ error: "Failed to download document" });
   }
 };

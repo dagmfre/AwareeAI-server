@@ -1,101 +1,149 @@
-import { Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
-import axios from "axios";
-import { getUserFromReq } from "../middleware/authMiddleware";
+import { Request, Response } from 'express';
+import * as chatService from '../services/chatService';
+import r2rClient from '../config/r2r';
+import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
-
-// Start a new chat (initialize with configs from UI/dashboard)
 export const createChat = async (req: Request, res: Response) => {
-  const { title, config } = req.body; // config: {llm, retrievalMode, topK, webSearchEnabled}
-  const user = await getUserFromReq(req);
-  const chat = await prisma.chat.create({
-    data: {
-      userId: user.id,
-      title,
-      // Optionally: store initial config as JSON in chat if you want persistent per-chat config
-    },
-  });
-  res.status(201).json(chat);
-};
-
-// Get all user chats (for sidebar/history)
-export const getUserChats = async (req: Request, res: Response) => {
-  const user = await getUserFromReq(req);
-  const chats = await prisma.chat.findMany({
-    where: { userId: user.id },
-    include: { messages: true },
-    orderBy: { updatedAt: "desc" },
-    take: 20, // for dashboard recents
-  });
-  res.json(chats);
-};
-
-// Handle a chat query with selected documents
-export const sendMessage = async (req: Request, res: Response) => {
-  /*
-    req.body:
-    {
-      chatId,
-      message,
-      selectedDocIds, // array of doc ids (user docs or public)
-      config: { llm, retrievalMode, numChunks, webSearchEnabled }
-    }
-  */
-  const user = await getUserFromReq(req);
-  const { chatId, message, selectedDocIds, config } = req.body;
-
-  // Find document(s) and prepare R2R document ID refs
-  const docs = await prisma.document.findMany({
-    where: {
-      OR: [
-        { id: { in: selectedDocIds }, userId: user.id },
-        { id: { in: selectedDocIds }, isPublic: true },
-      ],
-    },
-  });
-  const r2rDocIds = docs.map((d) => d.r2rDocId).filter(Boolean);
-
-  // Prepare body for R2R RAG call
-  const ragPayload = {
-    query: message,
-    collection_ids: r2rDocIds, // scope w/ doc selection
-    user_id: user.id, // for R2R scoping
-    llm: config.llm,
-    retrieval_mode: config.retrievalMode,
-    num_chunks: config.numChunks,
-    web_search: config.webSearchEnabled,
-  };
-
   try {
-    // Call self-hosted R2R
-    const r2rRes = await axios.post(
-      process.env.R2R_URL + "/v3/retrieval/rag",
-      ragPayload,
-      { headers: { "x-r2r-api-key": process.env.R2R_API_KEY } }
-    );
-    // Save message (both user and AI) to chat
-    await prisma.message.createMany({
-      data: [
-        {
-          chatId,
-          sender: "user",
-          content: message,
-        },
-        {
-          chatId,
-          sender: "assistant",
-          content: r2rRes.data.answer, // Adjust according to actual R2R response
-          context: r2rRes.data, // Save RAG trace
-        },
-      ],
+    const userId = (req as any).user.id;
+    const { title, description, selectedDocuments = [] } = req.body;
+    const chat = await chatService.createChat({ title, description, userId, selectedDocuments });
+    res.status(201).json({ message: 'Chat created', chat });
+  } catch (error: any) {
+    logger.error('Create chat error:', error);
+    res.status(500).json({ error: 'Failed to create chat' });
+  }
+};
+
+export const list = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { page = 1, limit = 10 } = req.query;
+    const chats = await chatService.getUserChats(userId, {
+      page: parseInt(page as string),
+      limit: parseInt(limit as string)
+    });
+    res.json(chats);
+  } catch (error: any) {
+    logger.error('List chats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve chats' });
+  }
+};
+
+export const get = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const chat = await chatService.getChat(id, userId);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    res.json({ chat });
+  } catch (error: any) {
+    logger.error('Get chat error:', error);
+    res.status(500).json({ error: 'Failed to retrieve chat' });
+  }
+};
+
+export const sendMessage = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const { message, selectedDocuments = [], config = {} } = req.body;
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+    const chat = await chatService.getChat(id, userId);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    const documents = await chatService.getDocumentsByIds(selectedDocuments, userId);
+    const r2rDocIds = documents.map(doc => doc.r2rDocId).filter(Boolean);
+    const ragPayload = {
+      message,
+      conversation_id: chat.id,
+      search_settings: {
+        search_mode: config.searchMode || 'advanced',
+        filters: r2rDocIds.length > 0 ? { document_id: { $in: r2rDocIds } } : undefined,
+        limit: config.limit || 10
+      },
+      rag_generation_config: {
+        model: 'gemini/gemini-pro',
+        temperature: config.temperature || 0.7,
+        max_tokens: config.maxTokens || 1000,
+        ...config.generationConfig
+      },
+      include_title_if_available: true
+    };
+    const ragResponse = await r2rClient.post('/v3/retrieval/agent', ragPayload);
+    const userMessage = await chatService.addMessage({
+      chatId: id,
+      content: message,
+      role: 'user',
+      metadata: { selectedDocuments }
+    });
+    const assistantMessage = await chatService.addMessage({
+      chatId: id,
+      content: ragResponse.data.results.completion?.choices?.[0]?.message?.content || ragResponse.data.results.message,
+      role: 'assistant',
+      metadata: {
+        sources: ragResponse.data.results.search_results,
+        conversationId: ragResponse.data.results.conversation_id
+      }
+    });
+    await chatService.updateChat(id, {
+      conversationId: ragResponse.data.results.conversation_id,
+      lastActivity: new Date()
     });
     res.json({
-      answer: r2rRes.data.answer,
-      ragTrace: r2rRes.data, // Includes document graph/context for UI right pane
+      message: 'Message sent',
+      userMessage,
+      assistantMessage,
+      ragResponse: ragResponse.data.results
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "R2R error", details: err.message });
-    return;
+  } catch (error: any) {
+    logger.error('Send message error:', error);
+    res.status(500).json({ error: error.message || 'Failed to send message' });
+  }
+};
+
+export const getMessages = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const { page = 1, limit = 50 } = req.query;
+    const chat = await chatService.getChat(id, userId);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    const messages = await chatService.getChatMessages(id, {
+      page: parseInt(page as string),
+      limit: parseInt(limit as string)
+    });
+    res.json(messages);
+  } catch (error: any) {
+    logger.error('Get messages error:', error);
+    res.status(500).json({ error: 'Failed to retrieve messages' });
+  }
+};
+
+export const updateChat = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const updates = req.body;
+    const chat = await chatService.getChat(id, userId);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    const updatedChat = await chatService.updateChat(id, updates);
+    res.json({ message: 'Chat updated', chat: updatedChat });
+  } catch (error: any) {
+    logger.error('Update chat error:', error);
+    res.status(500).json({ error: 'Failed to update chat' });
+  }
+};
+
+export const deleteChat = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+    const chat = await chatService.getChat(id, userId);
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    await chatService.deleteChat(id);
+    res.json({ message: 'Chat deleted' });
+  } catch (error: any) {
+    logger.error('Delete chat error:', error);
+    res.status(500).json({ error: 'Failed to delete chat' });
   }
 };
