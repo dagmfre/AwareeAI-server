@@ -2,7 +2,6 @@
 
 ## Overview
 Awaree AI is a web application that allows users to interact with AI models using documentation. It leverages the MERN stack (MongoDB, Express, React, Node.js) along with TypeScript for type safety and improved developer experience. The application utilizes R2R for Retrieval-Augmented Generation (RAG) capabilities and SciPhi Cloud for document storage.
-
 ## Features
 - User authentication and management
 - Document upload and management
